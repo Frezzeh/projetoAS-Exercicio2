@@ -95,8 +95,23 @@ resource "azurerm_network_interface_security_group_association" "nic_nsg_associa
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
+## 6. DHCP
+resource "azurerm_network_security_rule" "dhcp_rule" {
+  name                        = "DHCP_Server"
+  priority                    = 120
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "67" # Porta DHCP
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_network_security_group.nsg.resource_group_name
+  network_security_group_name = azurerm_network_security_group.nsg.name
+}
 
-# 6. The Virtual Machine
+
+# 7. The Virtual Machine
 resource "azurerm_linux_virtual_machine" "vm" {
   name                            = "my-ubuntu-vm"
   location                        = azurerm_resource_group.rg.location
