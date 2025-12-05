@@ -105,7 +105,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   network_interface_ids           = [azurerm_network_interface.nic.id]
   disable_password_authentication = false
   admin_username                  = "azureuser"
-  admin_password                  = "P@sswOrd12345" # **Change this to a strong password and use a variable!**
+  admin_password                  = "@Qwerty123" # **Change this to a strong password and use a variable!**
 
   os_disk {
     caching              = "ReadWrite"
