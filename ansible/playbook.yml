@@ -2,6 +2,7 @@
 - name: Configure DHCP Server on Ubuntu
   hosts: dhcp
   become: yes
+  gather_facts: yes
 
   tasks:
 
@@ -11,7 +12,7 @@
         state: present
         update_cache: yes
 
-    - name: Configure DHCP server file 
+    - name: Configure DHCP server file
       copy:
         dest: /etc/dhcp/dhcpd.conf
         content: |
@@ -21,16 +22,20 @@
 
           subnet 10.0.2.0 netmask 255.255.255.0 {
             range 10.0.2.50 10.0.2.150;
-            option routers 10.0.2.1;
+            option routers 10.0.2.10;
             option subnet-mask 255.255.255.0;
             option domain-name-servers 8.8.8.8, 1.1.1.1;
           }
 
-    - name: Ensure DHCP listens on eth0
+    - name: Get default network interface
+      set_fact:
+        dhcp_interface: "{{ ansible_facts.default_ipv4.interface }}"
+
+    - name: Ensure DHCP listens on correct interface
       lineinfile:
         path: /etc/default/isc-dhcp-server
         regexp: '^INTERFACESv4='
-        line: 'INTERFACESv4="eth0"'
+        line: 'INTERFACESv4="{{ dhcp_interface }}"'
 
     - name: Enable and restart DHCP service
       systemd:
