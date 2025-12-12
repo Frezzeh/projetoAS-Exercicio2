@@ -2,7 +2,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0" # Use a version constraint appropriate for your project
+      version = "~> 3.0"
     }
   }
 }
@@ -17,7 +17,7 @@ resource "azurerm_resource_group" "rg" {
   location = "francecentral"
 }
 
-# 2. Virtual Network and Subnet
+# 2. VNet + Subnet
 resource "azurerm_virtual_network" "vnet" {
   name                = "my-vnet"
   address_space       = ["10.0.0.0/16"]
@@ -32,32 +32,18 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
-# 3. Public IP Address
-resource "azurerm_public_ip" "publicip" {
-  name                = "my-vm-publicip"
+# 3. Public IP
+resource "azurerm_public_ip" "server_publicip" {
+  name                = "dhcp-server-publicip"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   allocation_method   = "Static"
   sku                 = "Standard"
 }
 
-# 4. Network Interface
-resource "azurerm_network_interface" "nic" {
-  name                = "my-vm-nic"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.subnet.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.publicip.id
-  }
-}
-
-# 5. Network Security Group (to allow SSH)
-resource "azurerm_network_security_group" "nsg" {
-  name                = "my-vm-nsg"
+# 4. NSG
+resource "azurerm_network_security_group" "server_nsg" {
+  name                = "dhcp-server-nsg"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
@@ -69,58 +55,58 @@ resource "azurerm_network_security_rule" "ssh_rule" {
   access                      = "Allow"
   protocol                    = "Tcp"
   source_port_range           = "*"
-  destination_port_range      = "22" # Standard SSH port
-  source_address_prefix       = "*"  # Allow from any IP (Be cautious! Restrict this in production)
-  destination_address_prefix  = "*"
-  resource_group_name         = azurerm_network_security_group.nsg.resource_group_name
-  network_security_group_name = azurerm_network_security_group.nsg.name
-}
-
-resource "azurerm_network_security_rule" "http_rule" {
-  name                        = "HTTP_Access"
-  priority                    = 110
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "80"
+  destination_port_range      = "22"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = azurerm_network_security_group.nsg.resource_group_name
-  network_security_group_name = azurerm_network_security_group.nsg.name
+  resource_group_name         = azurerm_network_security_group.server_nsg.resource_group_name
+  network_security_group_name = azurerm_network_security_group.server_nsg.name
 }
 
-resource "azurerm_network_interface_security_group_association" "nic_nsg_association" {
-  network_interface_id      = azurerm_network_interface.nic.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-## 6. DHCP
 resource "azurerm_network_security_rule" "dhcp_rule" {
-  name                        = "DHCP_Server"
-  priority                    = 120
+  name                        = "DHCP_UDP67"
+  priority                    = 110
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Udp"
   source_port_range           = "*"
-  destination_port_range      = "67" # Porta DHCP
+  destination_port_range      = "67"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = azurerm_network_security_group.nsg.resource_group_name
-  network_security_group_name = azurerm_network_security_group.nsg.name
+  resource_group_name         = azurerm_network_security_group.server_nsg.resource_group_name
+  network_security_group_name = azurerm_network_security_group.server_nsg.name
 }
 
+# 5. Server NIC (Static IP)
+resource "azurerm_network_interface" "server_nic" {
+  name                = "dhcp-server-nic"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
 
-# 7. The Virtual Machine
-resource "azurerm_linux_virtual_machine" "vm" {
-  name                            = "my-ubuntu-vm"
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.subnet.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.0.2.10"
+    public_ip_address_id          = azurerm_public_ip.server_publicip.id
+  }
+}
+
+# 5a. Associate NIC with NSG
+resource "azurerm_network_interface_security_group_association" "server_nic_nsg" {
+  network_interface_id      = azurerm_network_interface.server_nic.id
+  network_security_group_id = azurerm_network_security_group.server_nsg.id
+}
+
+# 6. DHCP Server VM
+resource "azurerm_linux_virtual_machine" "server_vm" {
+  name                            = "dhcp-server-vm"
   location                        = azurerm_resource_group.rg.location
   resource_group_name             = azurerm_resource_group.rg.name
-  size                            = "Standard_B2S" # Basic VM size
-  network_interface_ids           = [azurerm_network_interface.nic.id]
+  size                            = "Standard_B2S"
+  network_interface_ids           = [azurerm_network_interface.server_nic.id]
   disable_password_authentication = false
   admin_username                  = "azureuser"
-  admin_password                  = "@Qwerty123" # **Change this to a strong password and use a variable!**
+  admin_password                  = "@Qwerty123"
 
   os_disk {
     caching              = "ReadWrite"
@@ -133,9 +119,35 @@ resource "azurerm_linux_virtual_machine" "vm" {
     sku       = "22_04-lts"
     version   = "latest"
   }
+
+  custom_data = base64encode(<<-EOF
+    #cloud-config
+    runcmd:
+      - apt update
+      - apt install -y isc-dhcp-server
+      - echo 'INTERFACESv4="eth0"' > /etc/default/isc-dhcp-server
+      - cat <<EOT > /etc/dhcp/dhcpd.conf
+        default-lease-time 600;
+        max-lease-time 7200;
+        authoritative;
+        subnet 10.0.2.0 netmask 255.255.255.0 {
+          range 10.0.2.50 10.0.2.150;
+          option routers 10.0.2.10;
+          option subnet-mask 255.255.255.0;
+          option domain-name-servers 8.8.8.8, 1.1.1.1;
+        }
+        EOT
+      - systemctl enable isc-dhcp-server
+      - systemctl restart isc-dhcp-server
+  EOF
+  )
 }
 
-# Output the public IP to connect to the VM later
-output "public_ip_address" {
-  value = azurerm_public_ip.publicip.ip_address
+# 7. Outputs
+output "server_public_ip" {
+  value = azurerm_public_ip.server_publicip.ip_address
+}
+
+output "server_private_ip" {
+  value = azurerm_network_interface.server_nic.private_ip_address
 }
